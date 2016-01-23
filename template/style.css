@@ -21,8 +21,9 @@ header h1 {
   letter-spacing: -2px;
   position: relative;
 }
-header svg {
+header img {
   display: block;
+  margin: 0;
 }
 header a {
   display: block;
@@ -125,15 +126,15 @@ aside nav ul ul li a {
 aside nav a del {
   opacity: .5;
 }
-
-.home main {
+/*
+.index main {
   float: none;
   width: 100%;
 }
 
-.home aside {
+.index aside {
   display: none;
-}
+}*/
 
 a { color: #D81E5B; }
 a:hover { color: #222; }

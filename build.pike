@@ -5,17 +5,17 @@
   To use this script you will need Pike 8.0 or greater (or at the moment
   you will need at Git version of Pike since the Markdown module isn't yet
   compiled with the public release).
-
-  This script will generate HTML versions of all the Markdown files.
 */
 
 #if !constant(Parser.Markdown.Marked)
+
 int main(int argc, array(string) argv)
 {
   werror("Missing Markdown module. It's available in Pike 8.0 and newer! ");
   return 1;
 }
-#else
+
+#else /* Parser.Markdown.Marked */
 
 import Regexp.PCRE;
 constant Re = Regexp.PCRE.Widestring;
@@ -25,17 +25,24 @@ constant Re = Regexp.PCRE.Widestring;
 private string source_path;
 private string destination_path;
 private string template_path;
-private array(Re) re_skip = ({ Re("^\\.") });
+// Skip all dot files
+private array(Re) re_skip = ({ Re("\\/\\.") });
 private Parser.HTML parser;
 private string template;
-private string submenu_file;
-private multiset ok_files = (< "gif", "png", "jpg" >);
+private string menu_file;
+private bool minify_html = true;
+private int file_count;
 private mapping replacements = ([
   "title":      0,
   "data":       0,
-  "build_date": 0
+  "build_date": 0,
+  "menu":       ""
 ]);
-
+// Markdown options
+private mapping options;
+private mapping menu_struct = ([]);
+private array menu_order;
+private int menu_pos = 0;
 private bool devmode = false;
 private string config_path;
 
@@ -94,8 +101,12 @@ int main(int argc, array(string) argv)
       template_path = t->template_path;
     }
 
-    if (t->submenu) {
-      submenu_file = t->submenu;
+    if (t->menufile) {
+      menu_file = t->menufile;
+    }
+
+    if (has_index(t, "minify_html")) {
+      minify_html = t->minify_html;
     }
   }
 
@@ -140,21 +151,27 @@ int main(int argc, array(string) argv)
     return 1;
   }
 
-  // Markdown options
-  mapping options = ([
+  options = ([
     "newline"     : false,
     "smartypants" : true,
     "highlight"   : set_highlighter()
   ]);
 
-  bool is_top_index = false;
-  mapping submenu_struct = ([]);
-  array submenu_order;
-  int menu_pos = 0;
-
   template = Stdio.read_file(combine_path(template_path, "main.html"));
 
   parser = Parser.HTML();
+
+  if (minify_html) {
+    parser->_set_data_callback(lambda (Parser.HTML pp, string data) {
+      if (String.trim_all_whites(data) == "") {
+        return "";
+      }
+    });
+
+    template = parser->feed(template)->finish()->read();
+    parser = Parser.HTML();
+  }
+
   parser->add_tags(([
     "link" :  lambda (Parser.HTML pp, mapping attr) {
                 string fp = combine_path(template_path, attr->href);
@@ -206,17 +223,45 @@ int main(int argc, array(string) argv)
   parser->clear_containers();
   parser->clear_tags();
 
-  parser->add_containers(([
-    "h1" : lambda (Parser.HTML pp, mapping attr, string data) {
-      if (!replacements->title)
-        replacements->title = data;
-    },
+  replacements->build_date = Calendar.now()->format_mtime();
 
-    "a" : lambda (Parser.HTML pp, mapping attr, string data) {
-      if (!attr->href) return 0;
-      if (sscanf (attr->href, "%*s.md")) {
+  write("Starting scanning and parsing...\n");
 
-        if (is_top_index) {
+  int starttime = time();
+
+  if (menu_file) {
+    write("\nParsing menu file:\n");
+
+    menu_file = combine_path(source_path, menu_file);
+
+    int startpos, endpos, startpos_end;
+
+    string menu_file_data = Stdio.read_file(menu_file);
+
+    parser->add_quote_tag("!--",
+                          lambda (Parser.HTML pp, string data) {
+                            string d = String.trim_all_whites(data);
+
+                            if (d == "menu") {
+                              startpos = pp->at()[1];
+                              startpos_end = sizeof("<!--" + data + "-->");
+                            }
+                            else if (d == "endmenu") {
+                              endpos = pp->at()[1];
+                            }
+                          },
+                          "--");
+
+    string menu_html = parser->feed(menu_file_data)->finish()->read();
+    parser->clear_quote_tags();
+
+    menu_html = String.trim_all_whites(menu_html[startpos+startpos_end..endpos-1]);
+    menu_html = Parser.Markdown.marked(menu_html, options);
+
+    parser->add_containers(([
+      "a" : lambda (Parser.HTML pp, mapping attr, string data) {
+        if (!attr->href) return 0;
+        if (sscanf (attr->href, "%*s.md")) {
           if (search(data, "<em>") > -1) {
             return "<span class='fake-link'>" + data + "</span>";
           }
@@ -227,8 +272,8 @@ int main(int argc, array(string) argv)
           string base_name      = basename(attr->href);
           string base_name_href = basename(html_href);
 
-          if (!submenu_struct[pts[0]]) {
-            submenu_struct[pts[0]] = ([
+          if (!menu_struct[pts[0]]) {
+            menu_struct[pts[0]] = ([
               "pos" : menu_pos++,
               "top" : ([ "href"          : attr->href,
                          "html_href"     : html_href,
@@ -238,11 +283,11 @@ int main(int argc, array(string) argv)
             ]);
           }
 
-          if (!submenu_struct[pts[0]]->pages) {
-            submenu_struct[pts[0]]->pages = ({});
+          if (!menu_struct[pts[0]]->pages) {
+            menu_struct[pts[0]]->pages = ({});
           }
           else {
-            submenu_struct[pts[0]]->pages += ({
+            menu_struct[pts[0]]->pages += ({
               ([ "href"          : attr->href,
                  "html_href"     : html_href,
                  "basename"      : base_name,
@@ -250,143 +295,188 @@ int main(int argc, array(string) argv)
                  "title"         : data ])
             });
           }
+
+          attr->href = replace(attr->href, ".md", ".html");
+
+          return ({ sprintf("<a%{ %s=\"%s\"%}>%s</a>",
+                    (array) attr, data) });
         }
-
-        attr->href = replace(attr->href, ".md", ".html");
-
-        return ({ sprintf("<a%{ %s=\"%s\"%}>%s</a>",
-                  (array) attr, data) });
       }
-    }
-  ]));
+    ]));
 
-  replacements->build_date = Calendar.now()->format_mtime();
-  replacements->menu = "";
+    parser->feed(menu_html)->finish();
 
-  function render_menu = lambda (string index, string current, void|int depth) {
-    int pos = submenu_struct[index]->pos;
-    String.Buffer sb = String.Buffer();
-    function add = sb->add;
-    string rel_path = "../" * depth;
+    parser->clear_containers();
 
-    add("<nav class='inner'><p><a href='", rel_path,
-        "index.html'>Start</a></p><ul>");
+    menu_order = allocate(sizeof(indices(menu_struct)));
 
-    foreach (submenu_order, mapping sub) {
-      bool is_cur = false;
-
-      if (sub->pos == pos) {
-        is_cur = true;
-      }
-
-      add("<li", (is_cur ? " class='selected'" : ""),
-          "><a href='", rel_path + sub->top->html_href, "'>",
-          sub->top->title, "</a>");
-
-      if (sizeof(sub->pages) && is_cur) {
-        add("<ul>");
-
-        foreach (sub->pages, mapping page) {
-          string cls = "normal";
-          string href = rel_path + page->html_href;
-
-          if (page->href == current) {
-            cls = "selected";
-          }
-          // Current section, no relative depths
-          if (is_cur) {
-            href = page->basename_href;
-          }
-
-          add("<li class='", cls, "'><a href='", href, "'>",
-              page->title, "</a></li>");
-        }
-        add("</ul>");
-      }
+    foreach (indices(menu_struct), string k) {
+      menu_order[menu_struct[k]->pos] = menu_struct[k];
     }
 
-    add("</ul></nav>");
+//    handle_path(combine_path(source_path, menu_file), menu_file);
 
-    return sb->get();
-  };
 
-  function handle_path = lambda (string path, string name, int depth)
-  {
-    string relpath = (path - source_path)[1..];
-    string new_path = replace(path, source_path, destination_path);
-
-    if (SKIP(path)) {
-      werror("Found skip match in re for %s\n", path);
-      return;
-    }
-
-    if (Stdio.is_dir(path)) {
-      if (!Stdio.exist(new_path)) {
-        mkdir(new_path);
-      }
-
-      return;
-    }
-
-    string toppath = "../" * depth;
-    if (toppath == "") toppath = "./";
-    replacements->toppath = toppath + "index.html";
-
-    array(string) parts = name/".";
-
-    if (depth > 0) {
-      array(string) rel_parts = relpath/"/";
-      replacements->menu = render_menu(rel_parts[0], relpath, depth);
-      replacements->home = "";
-    }
-    else {
-      replacements->home = " class='home'";
-      replacements->menu = "";
-    }
-
-    if (sizeof(parts) > 1 && lower_case(parts[-1]) == "md") {
-      write("  * Parsing: %s\n", name);
-      string html = Parser.Markdown.marked(Stdio.read_file(path), options);
-      string nn = (parts[..<1] * ".") + ".html";
-
-      if (toppath == "./" && name == "index.md") {
-        is_top_index = true;
-      }
-      else {
-        is_top_index = false;
-      }
-
-      replacements->data = fix_links(html);
-
-      mapping rr = ([]);
-      foreach (indices(replacements), string key) {
-        rr["${" + key + "}"] = replacements[key];
-      }
-
-      html = replace(template, rr);
-
-      new_path = replace(new_path, name, nn);
-      Stdio.write_file(new_path, html);
-    }
-    else {
-      Stdio.cp(path, new_path);
-    }
-  };
-
-  if (submenu_file) {
-    handle_path(combine_path(source_path, submenu_file), submenu_file);
-    submenu_order = allocate(sizeof(indices(submenu_struct)));
-
-    foreach (indices(submenu_struct), string k) {
-      submenu_order[submenu_struct[k]->pos] = submenu_struct[k];
-    }
-
-    re_skip += ({ Re("^" + combine_path(source_path, submenu_file) + "$" ) });
+//    re_skip += ({ Re("^" + combine_path(source_path, menu_file) + "$" ) });
   }
+
+
+  parser->add_containers(([ "h1" : default_h1_handler,
+                            "a"  : default_link_handler ]));
 
   recurse_dir(source_path, handle_path);
 
+  write("\nDone!\nParsed %d files in %.2f seconds.\n\n",
+        file_count, time(starttime));
+
 	return 0;
+}
+
+mixed default_h1_handler(Parser.HTML pp, mapping attr, string data)
+{
+  if (!replacements->title)
+    replacements->title = data;
+}
+
+mixed default_link_handler(Parser.HTML pp, mapping attr, string data)
+{
+  if (!attr->href) return 0;
+  if (sscanf(attr->href, "%*s.md") == 1) {
+    attr->href = replace(attr->href, ".md", ".html");
+    return ({ sprintf("<a%{ %s=\"%s\"%}>%s</a>",
+              (array) attr, data) });
+  }
+}
+
+void handle_path(string path, string name, void|int depth)
+{
+  string relpath = (path - source_path)[1..];
+  string new_path = replace(path, source_path, destination_path);
+
+  if (SKIP(path)) {
+    werror("Found skip match in re for %s\n", path);
+    return;
+  }
+
+  if (Stdio.is_dir(path)) {
+    if (!Stdio.exist(new_path)) {
+      mkdir(new_path);
+    }
+
+    return;
+  }
+
+  string toppath = "../" * depth;
+  if (toppath == "") toppath = "./";
+  replacements->toppath = toppath + "index.html";
+  replacements->top_class = sprintf("class='%s'",
+                                    replace(relpath, "/", "-") - ".md");
+
+  array(string) parts = name/".";
+
+  if (menu_file) {
+    array(string) rel_parts = relpath/"/";
+    replacements->menu = render_menu(rel_parts[0], relpath, depth);
+  }
+
+  if (sizeof(parts) > 1 && lower_case(parts[-1]) == "md") {
+    write("  * Parsing: %s\n", name);
+    string html = Parser.Markdown.marked(Stdio.read_file(path), options);
+    string nn = (parts[..<1] * ".") + ".html";
+
+    replacements->data = fix_links(html);
+
+    if (menu_file && path == menu_file) {
+      parser->clear_containers();
+
+      int sp, ep;
+      parser->add_quote_tag("!--",
+                            lambda (Parser.HTML pp, string data) {
+                              string d = String.trim_all_whites(data);
+                              if (d == "menu") {
+                                sp = pp->at()[1]-1;
+                              }
+                              else if (d == "endmenu") {
+                                ep = pp->at()[1];
+                                ep += sizeof("<!--" + data + "-->");
+                              }
+                            },
+                            "--");
+
+      parser->feed(replacements->data)->finish();
+
+      string p1 = replacements->data[..sp];
+      string p2 = replacements->data[ep..];
+
+      replacements->data = p1 + p2;
+
+      parser->add_containers(([ "h1" : default_h1_handler,
+                                "a"  : default_link_handler ]));
+    }
+
+    mapping rr = ([]);
+    foreach (indices(replacements), string key) {
+      rr["${" + key + "}"] = replacements[key];
+    }
+
+    html = replace(template, rr);
+
+    new_path = replace(new_path, name, nn);
+    Stdio.write_file(new_path, html);
+
+    file_count++;
+  }
+  else {
+    Stdio.cp(path, new_path);
+  }
+}
+
+string render_menu(string index, string current, void|int depth) {
+  int pos = !has_index(menu_struct, index) && -1 || menu_struct[index]->pos;
+  String.Buffer sb = String.Buffer();
+  function add = sb->add;
+  string rel_path = "../" * depth;
+
+  add("<nav class='inner'><p><a href='", rel_path,
+      "index.html'", pos == -1 ? " class='selected'" : "",
+      ">Start</a></p><ul>");
+
+  foreach (menu_order, mapping sub) {
+    bool is_cur = false;
+
+    if (sub->pos == pos) {
+      is_cur = true;
+    }
+
+    add("<li", (is_cur ? " class='selected'" : ""),
+        "><a href='", rel_path + sub->top->html_href, "'>",
+        sub->top->title, "</a>");
+
+    if (sizeof(sub->pages) && is_cur) {
+      add("<ul>");
+
+      foreach (sub->pages, mapping page) {
+        string cls = "normal";
+        string href = rel_path + page->html_href;
+
+        if (page->href == current) {
+          cls = "selected";
+        }
+        // Current section, no relative depths
+        if (is_cur) {
+          href = page->basename_href;
+        }
+
+        add("<li class='", cls, "'><a href='", href, "'>",
+            page->title, "</a></li>");
+      }
+      add("</ul>");
+    }
+  }
+
+  add("</ul></nav>");
+
+  return sb->get();
 }
 
 string fix_links(string s)
@@ -403,7 +493,7 @@ void recurse_dir(string path, function cb, void|int depth)
     string fp = combine_path(path, p);
 
     if (SKIP(fp)) {
-      write("  # Skipping %s: %s\n", fp, Stdio.is_dir(fp) ? "dir" : "file");
+      write("  # Skipping %s: %s\n", Stdio.is_dir(fp) ? "dir" : "file", fp);
       continue;
     }
 

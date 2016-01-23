@@ -2,6 +2,7 @@
   "source_path"      : "/Users/ponost/src/github/tutorial",
   "destination_path" : "/Users/ponost/src/github/markdown-to-html/htdocs",
   "template_path"    : null,
-  "submenu"          : "index.md",
+  "menufile"         : "index.md",
+  "minify_html"      : true,
   "skip"             : [ "__build__$" ]
 }
