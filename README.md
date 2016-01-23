@@ -24,12 +24,12 @@ resulting HTML files, to the HTML structure will be totally self contained.
 
 ### Options
 
-* **-d, --devel**: Will not inline the CSS. Useful while hacking the CSS so that
+* **`-d, --devel`**: Will not inline the CSS. Useful while hacking the CSS so that
   you don't need to generate the entire structure to see changes.
 
-* **-c=<path>, --config=<path>**: Path to config file to use.
+* **`-c=<path>, --config=<path>`**: Path to config file to use.
 
-* **-t=<path>, --template=<path>**: Path to template directory.
+* **`-t=<path>, --template=<path>`**: Path to template directory.
 
 
 ## Configuration
@@ -78,11 +78,11 @@ argument to the script. The configuration format is `JSON`.
   This will act as the menu for the entire site, nd will be put on all pages.
   This section will be removed from the resulting HTML file.
 
-* **minify_html**: The HTML in the template is minified (i.e. all newlines and
+* **`minify_html`**: The HTML in the template is minified (i.e. all newlines and
   whitespace between a closing and opening tag is removed) per default. I you
   want to keep the whitespace set this to `false`.
 
-* **skip**: An array of regexp of files to skip. Note that this is matched on
+* **`skip`**: An array of regexp of files to skip. Note that this is matched on
   every file's and diretorie's absolute path. **NOTE!** dot files are skipped
   per default.
 
