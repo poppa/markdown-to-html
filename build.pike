@@ -479,6 +479,7 @@ string render_menu(string index, string current, void|int depth) {
 
 string fix_links(string s)
 {
+  replacements->title = 0;
   parser = Parser.HTML();
   parser->add_containers(default_containers);
   return parser->feed(s)->finish()->read();
