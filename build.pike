@@ -45,6 +45,7 @@ private array menu_order;
 private int menu_pos = 0;
 private bool devmode = false;
 private string config_path;
+private mapping(string:function) default_containers;
 
 private constant HELP_TEXT = #"
 Usage: %s [options] md-source-path detination-path
@@ -231,7 +232,7 @@ int main(int argc, array(string) argv)
   int starttime = time();
 
   if (menu_file) {
-    write("\nParsing menu file:\n");
+    write("\nParsing menu file...");
 
     menu_file = combine_path(source_path, menu_file);
 
@@ -313,10 +314,16 @@ int main(int argc, array(string) argv)
     foreach (indices(menu_struct), string k) {
       menu_order[menu_struct[k]->pos] = menu_struct[k];
     }
+
+    write("...done!\n");
   }
 
-  parser->add_containers(([ "h1" : default_h1_handler,
-                            "a"  : default_link_handler ]));
+  default_containers = ([ "h1" : default_h1_handler,
+                          "a"  : default_link_handler ]);
+  parser = 0;
+  parser = Parser.HTML();
+
+  parser->add_containers(default_containers);
 
   recurse_dir(source_path, handle_path);
 
@@ -361,7 +368,7 @@ void handle_path(string path, string name, void|int depth)
 
   string toppath = "../" * depth;
   if (toppath == "") toppath = "./";
-  replacements->toppath = toppath + "index.html";
+  replacements->top_path = toppath + "index.html";
   replacements->top_class = sprintf("class='%s'",
                                     replace(relpath, "/", "-") - ".md");
 
@@ -381,7 +388,7 @@ void handle_path(string path, string name, void|int depth)
     replacements->data = fix_links(html);
 
     if (menu_file && path == menu_file) {
-      parser->clear_containers();
+      parser = Parser.HTML();
 
       int sp, ep;
       parser->add_quote_tag("!--",
@@ -403,9 +410,6 @@ void handle_path(string path, string name, void|int depth)
       string p2 = replacements->data[ep..];
 
       replacements->data = p1 + p2;
-
-      parser->add_containers(([ "h1" : default_h1_handler,
-                                "a"  : default_link_handler ]));
     }
 
     mapping rr = ([]);
@@ -475,7 +479,8 @@ string render_menu(string index, string current, void|int depth) {
 
 string fix_links(string s)
 {
-  replacements->title = 0;
+  parser = Parser.HTML();
+  parser->add_containers(default_containers);
   return parser->feed(s)->finish()->read();
 }
 
