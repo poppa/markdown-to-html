@@ -83,6 +83,7 @@ int main(int argc, array(string) argv)
     }
 
     mapping t = Standards.JSON.decode(Stdio.read_file(config_path));
+
     if (t->source_path) {
       source_path = t->source_path;
     }
@@ -261,7 +262,7 @@ int main(int argc, array(string) argv)
     parser->add_containers(([
       "a" : lambda (Parser.HTML pp, mapping attr, string data) {
         if (!attr->href) return 0;
-        if (sscanf (attr->href, "%*s.md")) {
+        if (sscanf(attr->href, "%*s.md")) {
           if (search(data, "<em>") > -1) {
             return "<span class='fake-link'>" + data + "</span>";
           }
@@ -305,7 +306,6 @@ int main(int argc, array(string) argv)
     ]));
 
     parser->feed(menu_html)->finish();
-
     parser->clear_containers();
 
     menu_order = allocate(sizeof(indices(menu_struct)));
@@ -313,13 +313,7 @@ int main(int argc, array(string) argv)
     foreach (indices(menu_struct), string k) {
       menu_order[menu_struct[k]->pos] = menu_struct[k];
     }
-
-//    handle_path(combine_path(source_path, menu_file), menu_file);
-
-
-//    re_skip += ({ Re("^" + combine_path(source_path, menu_file) + "$" ) });
   }
-
 
   parser->add_containers(([ "h1" : default_h1_handler,
                             "a"  : default_link_handler ]));
@@ -354,7 +348,6 @@ void handle_path(string path, string name, void|int depth)
   string new_path = replace(path, source_path, destination_path);
 
   if (SKIP(path)) {
-    werror("Found skip match in re for %s\n", path);
     return;
   }
 
@@ -381,6 +374,7 @@ void handle_path(string path, string name, void|int depth)
 
   if (sizeof(parts) > 1 && lower_case(parts[-1]) == "md") {
     write("  * Parsing: %s\n", name);
+
     string html = Parser.Markdown.marked(Stdio.read_file(path), options);
     string nn = (parts[..<1] * ".") + ".html";
 
