@@ -51,12 +51,12 @@ argument to the script. The configuration format is `JSON`.
 * **`source_path`**: The path to the directory where the Markdown files reside.
 
 * **`destination_path`**: The path to where the HTML files should be written. If
-  this file doesn't exist it will be created.
+  this directory doesn't exist it will be created.
 
 * **`template_path`**: The path to the directory where the templates reside. If
   this is `null` the default template will be used.
 
-* **`menufile`**: If you wan't a menu generated on all pages, the easiest way
+* **`menufile`**: If you want a menu generated on all pages, the easiest way
   is to create a *site index*, with links to all the pages, in the main 
   Markdown file. Note that the section is surrounded by two comment tags.
 
