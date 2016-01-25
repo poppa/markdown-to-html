@@ -26,24 +26,15 @@ header img {
   margin: 0;
 }
 header a {
-  display: block;
+  display: inline-block;
   position: relative;
   color: white;
+  margin: 0;
   transition: opacity .2s ease-in;
 }
 header a:hover {
   color: white;
   opacity: .7;
-}
-header .byline {
-  font-size: 1.2rem;
-  display: block;
-  position: absolute;
-  top: 33px;
-  left: 22px;
-  font-weight: normal;
-  letter-spacing: 1px;
-  opacity: .5;
 }
 header .container {
   padding-top: 15px;
@@ -126,15 +117,6 @@ aside nav ul ul li a {
 aside nav a del {
   opacity: .5;
 }
-/*
-.index main {
-  float: none;
-  width: 100%;
-}
-
-.index aside {
-  display: none;
-}*/
 
 a { color: #D81E5B; }
 a:hover { color: #222; }

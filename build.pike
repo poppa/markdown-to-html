@@ -20,7 +20,7 @@ int main(int argc, array(string) argv)
 import Regexp.PCRE;
 constant Re = Regexp.PCRE.Widestring;
 
-#define SKIP(X) (sizeof(((re_skip->match(X)) - ({ 0 }))) > 0)
+#define SKIP(X) (sizeof((re_skip->match(X)) - ({ 0 })) > 0)
 
 private string source_path;
 private string destination_path;
@@ -46,6 +46,7 @@ private int menu_pos = 0;
 private bool devmode = false;
 private string config_path;
 private mapping(string:function) default_containers;
+private bool source_is_dest = false;
 
 private constant HELP_TEXT = #"
 Usage: %s [options] md-source-path detination-path
@@ -77,40 +78,7 @@ int main(int argc, array(string) argv)
 
   argv -= ({ 0 });
 
-  if (config_path) {
-    if (!Stdio.exist(config_path)) {
-      werror("The path to the config file does not exist!\n");
-      return 1;
-    }
-
-    mapping t = Standards.JSON.decode(Stdio.read_file(config_path));
-
-    if (t->source_path) {
-      source_path = t->source_path;
-    }
-
-    if (t->destination_path) {
-      destination_path = t->destination_path;
-    }
-
-    if (t->skip) {
-      foreach (t->skip, string r) {
-        re_skip += ({ Re(r) });
-      }
-    }
-
-    if (!template_path && t->template_path) {
-      template_path = t->template_path;
-    }
-
-    if (t->menufile) {
-      menu_file = t->menufile;
-    }
-
-    if (has_index(t, "minify_html")) {
-      minify_html = t->minify_html;
-    }
-  }
+  parse_config();
 
   if (template_path && !Stdio.exist(template_path)) {
     werror("The template path \"%s\" does not exist!\n");
@@ -149,7 +117,7 @@ int main(int argc, array(string) argv)
   }
 
   if (!Stdio.exist(combine_path(template_path, "main.html"))) {
-    werror("The template dir \"%s\" doesn't have a main HTML template file!\n");
+    werror("The template dir \"%s\" doesn't have a main.html template file!\n");
     return 1;
   }
 
@@ -160,10 +128,76 @@ int main(int argc, array(string) argv)
   ]);
 
   template = Stdio.read_file(combine_path(template_path, "main.html"));
+  template = minify_template(template);
+  template = parse_template(template);
 
-  parser = Parser.HTML();
+  replacements->build_date = Calendar.now()->format_mtime();
 
+  if (source_path == destination_path) {
+    source_is_dest = true;
+    re_skip += ({ Re("\\.html$") });
+  }
+
+  parse_menu();
+
+  default_containers = ([ "h1" : default_h1_handler,
+                          "a"  : default_link_handler ]);
+
+  write("Starting scanning and parsing...\n");
+
+  int starttime = time();
+
+  recurse_dir(source_path, handle_path);
+
+  write("\nDone!\nParsed %d files in %.2f seconds.\n\n",
+        file_count, time(starttime));
+
+	return 0;
+}
+
+void parse_config()
+{
+  if (config_path) {
+    if (!Stdio.exist(config_path)) {
+      werror("The path to the config file does not exist!\n");
+      exit(1);
+    }
+
+    mapping t = Standards.JSON.decode(Stdio.read_file(config_path));
+
+    if (t->source_path) {
+      source_path = t->source_path;
+    }
+
+    if (t->destination_path) {
+      destination_path = t->destination_path;
+    }
+
+    if (t->skip) {
+      foreach (t->skip, string r) {
+        re_skip += ({ Re(r) });
+      }
+    }
+
+    if (!template_path && t->template_path) {
+      template_path = t->template_path;
+    }
+
+    if (t->menufile) {
+      menu_file = t->menufile;
+    }
+
+    if (has_index(t, "minify_html")) {
+      minify_html = t->minify_html;
+    }
+  }
+}
+
+string minify_template(string template)
+{
   if (minify_html) {
+    Parser.HTML parser = Parser.HTML();
+
     parser->_set_data_callback(lambda (Parser.HTML pp, string data) {
       if (String.trim_all_whites(data) == "") {
         return "";
@@ -171,25 +205,31 @@ int main(int argc, array(string) argv)
     });
 
     template = parser->feed(template)->finish()->read();
-    parser = Parser.HTML();
   }
 
-  parser->add_tags(([
+  return template;
+}
+
+string parse_template(string template)
+{
+  Parser.HTML p = Parser.HTML();
+
+  p->add_tags(([
     "link" :  lambda (Parser.HTML pp, mapping attr) {
-                string fp = combine_path(template_path, attr->href);
-                if (devmode) {
-                  attr->href = fp;
-                  return ({ sprintf("<link%{ %s='%s'%}>", (array)attr) });
-                }
-                else {
-                  if (Stdio.exist(fp)) {
-                    string css = Stdio.read_file(fp);
-                    return ({ "<style>" +
-                              CSSMinifier()->minify(css) +
-                              "</style>" });
-                  }
-                }
-              },
+      string fp = combine_path(template_path, attr->href);
+      if (devmode) {
+        attr->href = fp;
+        return ({ sprintf("<link%{ %s='%s'%}>", (array)attr) });
+      }
+      else {
+        if (Stdio.exist(fp)) {
+          string css = Stdio.read_file(fp);
+          return ({ "<style>" +
+                    CSSMinifier()->minify(css) +
+                    "</style>" });
+        }
+      }
+    },
     "img"  :  lambda (Parser.HTML pp, mapping attr) {
       if (attr->src) {
         string fp = combine_path(template_path, attr->src);
@@ -221,46 +261,41 @@ int main(int argc, array(string) argv)
     }
   ]));
 
-  template = parser->feed(template)->finish()->read();
-  parser->clear_containers();
-  parser->clear_tags();
+  return p->feed(template)->finish()->read();
+}
 
-  replacements->build_date = Calendar.now()->format_mtime();
-
-  write("Starting scanning and parsing...\n");
-
-  int starttime = time();
-
+void parse_menu()
+{
   if (menu_file) {
+    Parser.HTML p = Parser.HTML();
+
     write("\nParsing menu file...");
 
     menu_file = combine_path(source_path, menu_file);
 
-    int startpos, endpos, startpos_end;
+    int startpos, endpos;
 
     string menu_file_data = Stdio.read_file(menu_file);
 
-    parser->add_quote_tag("!--",
-                          lambda (Parser.HTML pp, string data) {
-                            string d = String.trim_all_whites(data);
+    p->add_quote_tag("!--",
+                     lambda (Parser.HTML pp, string data) {
+                       string d = String.trim_all_whites(data);
 
-                            if (d == "menu") {
-                              startpos = pp->at()[1];
-                              startpos_end = sizeof("<!--" + data + "-->");
-                            }
-                            else if (d == "endmenu") {
-                              endpos = pp->at()[1];
-                            }
-                          },
-                          "--");
+                       if (d == "menu") {
+                         startpos = pp->at()[1];
+                         startpos += sizeof("<!--" + data + "-->");
+                       }
+                       else if (d == "endmenu") {
+                         endpos = pp->at()[1] - 1;
+                       }
+                     },
+                     "--");
 
-    string menu_html = parser->feed(menu_file_data)->finish()->read();
-    parser->clear_quote_tags();
-
-    menu_html = String.trim_all_whites(menu_html[startpos+startpos_end..endpos-1]);
+    string menu_html = p->feed(menu_file_data)->finish()->read();
+    menu_html = String.trim_all_whites(menu_html[startpos..endpos]);
     menu_html = Parser.Markdown.marked(menu_html, options);
 
-    parser->add_containers(([
+    p->add_containers(([
       "a" : lambda (Parser.HTML pp, mapping attr, string data) {
         if (!attr->href) return 0;
         if (sscanf(attr->href, "%*s.md")) {
@@ -273,41 +308,32 @@ int main(int argc, array(string) argv)
 
           string base_name      = basename(attr->href);
           string base_name_href = basename(html_href);
+          mapping(string:string) menu = ([
+            "href"          : attr->href,
+            "html_href"     : html_href,
+            "basename"      : base_name,
+            "basename_href" : base_name_href,
+            "title"         : data ]);
 
           if (!menu_struct[pts[0]]) {
-            menu_struct[pts[0]] = ([
-              "pos" : menu_pos++,
-              "top" : ([ "href"          : attr->href,
-                         "html_href"     : html_href,
-                         "basename"      : base_name,
-                         "basename_href" : base_name_href,
-                         "title"         : data ])
-            ]);
+            menu_struct[pts[0]] = ([ "pos" : menu_pos++, "top" : menu ]);
           }
 
           if (!menu_struct[pts[0]]->pages) {
             menu_struct[pts[0]]->pages = ({});
           }
           else {
-            menu_struct[pts[0]]->pages += ({
-              ([ "href"          : attr->href,
-                 "html_href"     : html_href,
-                 "basename"      : base_name,
-                 "basename_href" : base_name_href,
-                 "title"         : data ])
-            });
+            menu_struct[pts[0]]->pages += ({ menu });
           }
 
           attr->href = replace(attr->href, ".md", ".html");
 
-          return ({ sprintf("<a%{ %s=\"%s\"%}>%s</a>",
-                    (array) attr, data) });
+          return ({ sprintf("<a%{ %s=\"%s\"%}>%s</a>", (array)attr, data) });
         }
       }
     ]));
 
-    parser->feed(menu_html)->finish();
-    parser->clear_containers();
+    p->feed(menu_html)->finish();
 
     menu_order = allocate(sizeof(indices(menu_struct)));
 
@@ -317,20 +343,6 @@ int main(int argc, array(string) argv)
 
     write("...done!\n");
   }
-
-  default_containers = ([ "h1" : default_h1_handler,
-                          "a"  : default_link_handler ]);
-  parser = 0;
-  parser = Parser.HTML();
-
-  parser->add_containers(default_containers);
-
-  recurse_dir(source_path, handle_path);
-
-  write("\nDone!\nParsed %d files in %.2f seconds.\n\n",
-        file_count, time(starttime));
-
-	return 0;
 }
 
 mixed default_h1_handler(Parser.HTML pp, mapping attr, string data)
@@ -388,31 +400,29 @@ void handle_path(string path, string name, void|int depth)
     replacements->data = fix_links(html);
 
     if (menu_file && path == menu_file) {
-      parser = Parser.HTML();
+      Parser.HTML p = Parser.HTML();
 
       int sp, ep;
-      parser->add_quote_tag("!--",
-                            lambda (Parser.HTML pp, string data) {
-                              string d = String.trim_all_whites(data);
-                              if (d == "menu") {
-                                sp = pp->at()[1]-1;
-                              }
-                              else if (d == "endmenu") {
-                                ep = pp->at()[1];
-                                ep += sizeof("<!--" + data + "-->");
-                              }
-                            },
-                            "--");
+      p->add_quote_tag("!--",
+                       lambda (Parser.HTML pp, string data) {
+                         string d = String.trim_all_whites(data);
+                         if (d == "menu") {
+                           sp = pp->at()[1]-1;
+                         }
+                         else if (d == "endmenu") {
+                           ep = pp->at()[1];
+                           ep += sizeof("<!--" + data + "-->");
+                         }
+                       },
+                       "--");
 
-      parser->feed(replacements->data)->finish();
+      p->feed(replacements->data)->finish();
 
-      string p1 = replacements->data[..sp];
-      string p2 = replacements->data[ep..];
-
-      replacements->data = p1 + p2;
+      replacements->data = replacements->data[..sp] + replacements->data[ep..];
     }
 
     mapping rr = ([]);
+
     foreach (indices(replacements), string key) {
       rr["${" + key + "}"] = replacements[key];
     }
@@ -425,7 +435,9 @@ void handle_path(string path, string name, void|int depth)
     file_count++;
   }
   else {
-    Stdio.cp(path, new_path);
+    if (!source_is_dest) {
+      Stdio.cp(path, new_path);
+    }
   }
 }
 
