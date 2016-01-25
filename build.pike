@@ -441,7 +441,8 @@ void handle_path(string path, string name, void|int depth)
   }
 }
 
-string render_menu(string index, string current, void|int depth) {
+string render_menu(string index, string current, void|int depth)
+{
   int pos = !has_index(menu_struct, index) && -1 || menu_struct[index]->pos;
   String.Buffer sb = String.Buffer();
   function add = sb->add;

@@ -15,11 +15,11 @@ pike build.pike /path/to/markdown/sources /path/to/output/directory
 ```
 
 In this case the default template will be used and all the Markdown source files
-will ge a corresponding HTML file in the output directory. The directory
+will get a corresponding HTML file in the output directory. The directory
 structure in `sources` will be kept in `output`.
 
 All resources (css and images) in the HTML template file will be inlined in the 
-resulting HTML files, to the HTML structure will be totally self contained.
+resulting HTML files, so the HTML structure will be totally self contained.
 
 
 ### Options
@@ -57,8 +57,8 @@ argument to the script. The configuration format is `JSON`.
   this is `null` the default template will be used.
 
 * **`menufile`**: If you want a menu generated on all pages, the easiest way
-  is to create a *site index*, with links to all the pages, in the main 
-  Markdown file. Note that the section is surrounded by two comment tags.
+  to do that is to create a *site index*, with links to all the pages, in the 
+  main Markdown file. Note that the section is surrounded by two comment tags.
 
   ```md
   <!-- menu -->
@@ -75,7 +75,7 @@ argument to the script. The configuration format is `JSON`.
   <!-- endmenu -->
   ```
 
-  This will act as the menu for the entire site, nd will be put on all pages.
+  This will act as the menu for the entire site, and will be put on all pages.
   This section will be removed from the resulting HTML file.
 
 * **`minify_html`**: The HTML in the template is minified (i.e. all newlines and
