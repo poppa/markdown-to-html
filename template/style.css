@@ -205,5 +205,53 @@ aside .selected .normal {
 
 footer {
   background: #323232;
-  color: #fff;
+  color: #666;
+  font-size: smaller;
+}
+footer a {
+  text-decoration: none;
+}
+
+footer a:hover {
+  color: #aaa;
+}
+
+.innernav {
+  text-align: center;
+}
+
+a.prevnext {
+  display: inline-block;
+  padding: 10px;
+  text-decoration: none;
+  vertical-align: middle;
+}
+
+a.prev {
+  padding-left: 0;
+}
+a.prevnext:before, a.prevnext:after {
+  content: '➤';
+  padding: 10px;
+  display: inline-block;
+  vertical-align: middle;
+}
+a.prev + a.next:before {
+  content: '•';
+  display: inline-block;
+  padding-right: 12px;
+}
+a.prev:after {
+  content: none;
+}
+a.prev:before {
+  transform: rotate(180deg);
+}
+
+a.next {
+  padding-left: 0;
+}
+a.next:before {
+  content: none;
+  padding: 0;
 }
