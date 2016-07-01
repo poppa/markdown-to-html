@@ -11,7 +11,7 @@
 
 int main(int argc, array(string) argv)
 {
-  werror("Missing Markdown module. It's available in Pike 8.0 and newer! ");
+  werror("Missing Markdown module. It's available in Pike 8.1 and newer! ");
   return 1;
 }
 
@@ -30,6 +30,7 @@ private array(Re) re_skip = ({ Re("\\/\\.") });
 private Parser.HTML parser;
 private string template;
 private string menu_file;
+private bool keep_menu = false;
 private bool minify_html = true;
 private int file_count;
 private mapping replacements = ([
@@ -196,6 +197,20 @@ int main(int argc, array(string) argv)
 
   parse_menu();
 
+  if (menu_file) {
+    int menu_mtime = file_stat(menu_file)->mtime;
+
+    if (!info->menu_mtime || info->menu_mtime < menu_mtime) {
+      if (!silent) {
+        werror("* Menu changed. Will regenerate all.\n");
+      }
+
+      regenerate_all = true;
+      info->menu_mtime = menu_mtime;
+    }
+  }
+
+
   default_containers = ([ "h1" : default_h1_handler,
                           "a"  : default_link_handler ]);
 
@@ -256,6 +271,10 @@ void parse_config()
 
     if (t->menufile) {
       menu_file = t->menufile;
+    }
+
+    if (t->keep_menu) {
+      keep_menu = true;
     }
 
     if (has_index(t, "minify_html")) {
@@ -464,8 +483,9 @@ void parse_menu()
 
 mixed default_h1_handler(Parser.HTML pp, mapping attr, string data)
 {
-  if (!replacements->title)
+  if (!replacements->title) {
     replacements->title = data;
+  }
 }
 
 mixed default_link_handler(Parser.HTML pp, mapping attr, string data)
@@ -555,7 +575,7 @@ void handle_path(string path, string name, void|int depth)
 
     replacements->data = fix_links(html);
 
-    if (menu_file && path == menu_file) {
+    if (menu_file && path == menu_file && keep_menu != true) {
       Parser.HTML p = Parser.HTML();
 
       int sp, ep;
@@ -694,11 +714,10 @@ void handle_path(string path, string name, void|int depth)
     mapping rr = ([]);
 
     foreach (indices(replacements), string key) {
-      rr["${" + key + "}"] = replacements[key];
+      rr["${" + key + "}"] = replacements[key]||"";
     }
 
     html = replace(template, rr);
-
     new_path = replace(new_path, name, nn);
     Stdio.write_file(new_path, html);
 
